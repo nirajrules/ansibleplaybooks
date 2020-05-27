@@ -1,0 +1,51 @@
+#ansible-playbook -v -i inventory.txt ucpupgrade.yml -e var_source=wave3vars.yml
+
+- hosts: master
+  become: yes
+  remote_user: ec2-user
+  tasks:
+  - name: Drain the node for Engine Upgrade
+    command: docker node update --availability drain {{ hostvars[groups['node'][0]].inventory_hostname }}
+
+- hosts: node
+  become: yes
+  remote_user: ec2-user
+  tasks:
+  - name: Load upgrade context variables
+    include_vars:
+      file: '{{ var_source }}'
+
+  - name: Install docker cli on the server
+    yum:
+      name: "{{ docker_cli_url }}"
+      state: present
+
+  - name: Install containerd on the server
+    yum:
+      name: "{{ containerd_url }}"
+      state: present
+
+  - name: Install docker engine on the server
+    yum:
+      name: "{{ docker_engine_url }}"
+      state: present
+
+  - name: Start service docker, if not started
+    service:
+       name: docker
+       state: started
+
+  - name: Enable service docker, and not touch the state
+    service:
+       name: docker
+       enabled: yes
+
+  - name: Pull UCP image from Docker Hub
+    shell: "docker image pull docker/ucp:3.2.6"
+
+- hosts: master
+  become: yes
+  remote_user: ec2-user
+  tasks:
+  - name: Activate the node after Engine Upgrade
+    command: docker node update --availability active {{ hostvars[groups['node'][0]].inventory_hostname }}
