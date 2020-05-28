@@ -1,0 +1,100 @@
+---
+- hosts: nodes
+  become: yes
+  vars:
+     ucp_ver:
+        3.2.5
+     ucp_tar_file:
+        ucp_images_3.1.7.tar.gz
+     dest_dir:
+        /tmp/
+     docker_engine_url:
+         https://storebits.docker.com/ee/m/sub-xxx/rhel/8/x86_64/stable/Packages/docker-ee-19.03.5-3.el8.x86_64.rpm
+     docker_cli_url:
+         https://storebits.docker.com/ee/m/sub-xxx/rhel/8/x86_64/stable/Packages/docker-ee-cli-19.03.5-3.el8.x86_64.rpm
+     containerd_url:
+         https://storebits.docker.com/ee/m/sub-xxx/rhel/8/x86_64/stable/Packages/containerd.io-1.2.10-3.2.el8.x86_64.rpm
+
+  tasks:
+  - name: Check if FIPS is enabled
+    command: cat /proc/sys/crypto/fips_enabled
+    register: fips_check
+    changed_when: False
+    failed_when: False
+    check_mode: no
+
+  - name: install required packages
+    yum:
+      name: yum-utils
+      state: present
+  
+  #- name: install container selinux dependency on the server
+  #  yum:
+  #    name: "{{ cont_selinux_url }}"
+  #    state: present
+
+  - name: install docker cli on the server
+    yum:
+      name: "{{ docker_cli_url }}"
+      state: present
+
+  - name: Install containerd on the server
+    yum:
+      name: "{{ containerd_url }}"
+      state: present
+
+  - name: Install docker engine on the server
+    yum:
+      name: "{{ docker_engine_url }}"
+      state: present
+  
+  #- name: Create daemon.json file for log rotation.
+  #  copy:
+  #    dest: "/etc/docker/daemon.json"
+  #    content: |
+  #      {
+  #        "log-driver": "json-file",
+  #        "log-opts": {
+  #        "max-size": "50m",    
+  #        "max-file": "1"    
+  #                    }
+  #      } 
+
+  - name: Start service docker, if not started
+    service:
+       name: docker
+       state: started
+
+  - name: Enable service docker, and not touch the state
+    service:
+       name: docker
+       enabled: yes
+
+  #- name: Download UCP tar file for offline install
+  #  get_url:
+  #    url: '{{ ucp_tar_url }}'
+  #    dest: '{{ dest_dir }}'
+  #    mode: '0740'
+  #    timeout: 330
+
+  - name: Pull UCP image from Docker Hub
+    shell: "docker image pull docker/ucp:3.2.5"
+
+  #- name: Remove ucp tar file from the server for offline install
+  #  file:
+  #    path: "{{ dest_dir }}/{{ ucp_tar_file }}"
+  #    state: absent
+
+- hosts: masters
+  become: yes
+  tasks:
+  - name: Join Master Node to UCP cluster
+    shell: "docker swarm join --token SWMTKN-1-39kllyud0i2rn0360tdhgf023j2o35cfiwq3h6n4nt6a9dp77y-bb9f27df2xso28bi8tc2u1642 172.31.10.93:2377"
+    ignore_errors: True
+
+- hosts: workers
+  become: yes
+  tasks:
+  - name: Join Worker Node to UCP cluster
+    shell: "docker swarm join --token SWMTKN-1-39kllyud0i2rn0360tdhgf023j2o35cfiwq3h6n4nt6a9dp77y-9qq00wnwold9puq68zyutw4om 172.31.10.93:2377"
+    ignore_errors: True

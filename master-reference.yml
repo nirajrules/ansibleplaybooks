@@ -1,0 +1,160 @@
+---
+- hosts: nodes
+  become: yes
+  gather_facts: no
+
+  vars:
+     ucp_ver:
+        '{{ ucp_ver }}'
+     ucp_tar_file:
+          ucp_images_{{ ucp_ver }}.tar.gz
+     dest_dir:
+        /tmp/
+     binary_path:
+        /usr/local/bin/
+
+     docker_engine_url_lts:
+         https://storebits.docker.com/ee/m/sub-xxx/rhel/8/x86_64/stable/Packages/docker-ee-19.03.5-3.el8.x86_64.rpm
+     docker_cli_url_lts:
+         https://storebits.docker.com/ee/m/sub-xxx/rhel/8/x86_64/stable/Packages/docker-ee-cli-19.03.5-3.el8.x86_64.rpm
+     containerd_url_lts:
+         https://storebits.docker.com/ee/m/sub-xxx/rhel/8/x86_64/stable/Packages/containerd.io-1.2.10-3.2.el8.x86_64.rpm
+
+     cont_selinux_url_lts:
+         http://artifactory.lifecorp.com/artifactory/dcs-container-release-local/UCP_Files/container-selinux-2.107-3.el7.noarch.rpm
+
+     kubectl:
+         http://artifactory.lifecorp.com/artifactory/dcs-container-release-local/kubectl
+     kubectx:
+         http://artifactory.lifecorp.com/artifactory/dcs-container-release-local/kubectx
+     kubens:
+         http://artifactory.lifecorp.com/artifactory/dcs-container-release-local/kubens
+     jq:
+         http://artifactory.lifecorp.com/artifactory/dcs-container-release-local/UCP_Files/jq 
+
+
+  tasks:
+  - name: Check if FIPS is enabled
+    command: cat /proc/sys/crypto/fips_enabled
+    register: fips_check
+    changed_when: False
+    failed_when: False
+    check_mode: no
+  
+  - name: Install all the packages when the user selected UCP 3.1.7 version. 
+    yum:
+      name: "{{ packages }}"
+    vars:
+      packages:
+      - '{{ docker_cli_url_prev }}'
+      - '{{ docker_engine_url_prev }}'
+      - '{{ cont_selinux_url_prev }}'
+    when:  ucp_ver  == "3.1.7"
+
+  - name: Install all the packages when the user selected UCP 3.2.0 version.
+    yum:
+      name: "{{ packages }}"
+    vars:
+      packages:
+      - '{{ docker_cli_url_lts }}'
+      - '{{ docker_engine_url_lts }}'
+      - '{{ cont_selinux_url_lts }}'
+    when:  ucp_ver  == "3.2.0" 
+ 
+  - name: Download UCP tar file
+    get_url:
+      url: '{{ ucp_tar_url_prev }}'
+      dest: '{{ dest_dir }}'
+      mode: '0740'
+      timeout: 330 
+    when: ucp_ver  == "3.1.7"
+
+  - name: Download UCP tar file
+    get_url:
+      url: '{{ ucp_tar_url_lts }}'
+      dest: '{{ dest_dir }}'
+      mode: '0740'
+      timeout: 330
+    when:  ucp_ver  == "3.2.0"
+  
+  - name: Create daemon.json file for log rotation.
+    copy:
+      dest: "/etc/docker/daemon.json"
+      content: |
+        {
+          "log-driver": "json-file",
+          "log-opts": {
+          "max-size": "50m",    
+          "max-file": "1"    
+                      }
+        } 
+
+  - name: Start service docker, if not started
+    service:
+       name: docker
+       state: started
+
+  - name: Enable service docker, and not touch the state
+    service:
+       name: docker
+       enabled: yes
+
+  - name: Load UCP image from tar file
+    shell: "docker load < {{ dest_dir }}/{{ ucp_tar_file }}"
+
+  - name: Remove ucp tar file from the server
+    file:
+      path: "{{ dest_dir }}/{{ ucp_tar_file }}"
+      state: absent
+  
+  - name: Spin up UCP docker container.
+    shell: |
+      docker container run --rm -e UCP_ADMIN_PASSWORD={{ admin_passwd }}  \
+      --name ucp -v /var/run/docker.sock:/var/run/docker.sock docker/ucp:{{ ucp_ver }} install \
+      --host-address $(hostname -I | awk '{ print $1 }') \
+      --san {{ san }} \
+      --debug \
+    register: join_out
+
+  - name: Copy the binary files into the server
+    get_url:
+      url: '{{ item }}'
+      dest: '{{ binary_path }}'
+      owner: root
+      group: root
+      mode: 0755
+    with_items:
+    - '{{ kubectl }}'
+    - '{{ kubectx }}'
+    - '{{ kubens }}'
+    - '{{ jq }}'
+
+  - name: Print installation log
+    debug: var=join_out.stdout_lines 
+
+  - name: Get Bearer Token from UCP
+    shell: |
+             authtoken=$(curl -sk -d '{"username":"admin","password":"{{ admin_passwd }}"}' https://$(hostname -I | awk '{ print $1 }'):1443/auth/login | jq -r .auth_token) && echo $authtoken
+    register: authtoken
+
+  - set_fact:
+       ns_result: "{{ authtoken.stdout }}"
+
+  - name: Download UCP config file
+    shell: |
+             curl -X GET --insecure https://$(hostname -I | awk '{ print $1 }'):1443/api/ucp/config-toml -H  "accept: application/toml" -H  "Authorization: Bearer {{ authtoken.stdout }}" > ucp-config.toml
+  
+  - name: Update MTU for Calico and ipip
+    shell: |
+          sed -i 's/1430/1402/g' ucp-config.toml
+
+  - name: Read the updated mtu before pushing the ucp-config.toml file into UCP.
+    shell: | 
+           cat ucp-config.toml | grep mtu
+    register: output
+ 
+  - debug: msg="{{ output.stdout_lines|list }}"
+
+  - name: Push updated config file into UCP
+    shell: |
+           curl --insecure -X PUT -H "accept: application/toml" -H "Authorization: Bearer {{ authtoken.stdout }}" --upload-file 'ucp-config.toml' https://$(hostname -I | awk '{ print $1 }'):1443/api/ucp/config-toml
