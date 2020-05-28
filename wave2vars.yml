@@ -1,4 +1,4 @@
-docker_engine_url: https://storebits.docker.com/ee/m/sub-136e9a46-e41e-46dd-92ac-e24e197a6073/rhel/7/x86_64/stable/Packages/docker-ee-18.09.11-3.el7.x86_64.rpm
-docker_cli_url: https://storebits.docker.com/ee/m/sub-136e9a46-e41e-46dd-92ac-e24e197a6073/rhel/7/x86_64/stable/Packages/docker-ee-cli-18.09.11-3.el7.x86_64.rpm
-containerd_url: https://storebits.docker.com/ee/m/sub-136e9a46-e41e-46dd-92ac-e24e197a6073/rhel/7/x86_64/stable/Packages/containerd.io-1.2.6-3.3.el7.x86_64.rpm
+docker_engine_url: https://storebits.docker.com/ee/m/sub-xxx/rhel/7/x86_64/stable/Packages/docker-ee-18.09.11-3.el7.x86_64.rpm
+docker_cli_url: https://storebits.docker.com/ee/m/sub-xxx/rhel/7/x86_64/stable/Packages/docker-ee-cli-18.09.11-3.el7.x86_64.rpm
+containerd_url: https://storebits.docker.com/ee/m/sub-xxx/rhel/7/x86_64/stable/Packages/containerd.io-1.2.6-3.3.el7.x86_64.rpm
 ucp_ver: 3.1.13

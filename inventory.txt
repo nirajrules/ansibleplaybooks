@@ -1,8 +1,7 @@
 #Prep the master node first and then run the node prep on the rest of the nodes
-#ansible-playbook -i /etc/ansible/inventory.txt ucpnodeinstall.yml
 
-[all:vars]
-ansible_ssh_private_key_file=./id_rsa
+#[all:vars]
+#ansible_ssh_private_key_file=./id_rsa
  
 [master]
 ip-172-31-42-208.ec2.internal
